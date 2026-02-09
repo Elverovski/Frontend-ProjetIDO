@@ -1,170 +1,157 @@
 using System;
+using System.Collections;
+using System.Collections.Generic;
 using UnityEngine;
 using NativeWebSocket;
 
 namespace Network.WebSocket.Core
 {
-    /// <summary>
-    /// Client WebSocket de base - Gère la connexion au serveur
-    /// </summary>
     public class SocketClient : MonoBehaviour
     {
-        private static SocketClient _instance;
-        public static SocketClient Instance
-        {
-            get
-            {
-                if (_instance == null)
-                {
-                    GameObject go = new GameObject("SocketClient");
-                    _instance = go.AddComponent<SocketClient>();
-                    DontDestroyOnLoad(go);
-                }
-                return _instance;
-            }
-        }
-        
         private NativeWebSocket.WebSocket websocket;
-        private bool isConnecting = false;
-        private int reconnectAttempts = 0;
-        private float reconnectTimer = 0f;
-        
         private string serverUrl;
-        private float reconnectDelay;
-        private int maxReconnectAttempts;
-        
+        private bool isConnected = false;
+        private bool isConnecting = false;
+
+        // Events
         public event Action OnConnected;
         public event Action OnDisconnected;
-        public event Action<string> OnError;
         public event Action<string, string> OnMessage;
-        
-        public bool IsConnected => websocket?.State == WebSocketState.Open;
-        public WebSocketState State => websocket?.State ?? WebSocketState.Closed;
 
-        private void Awake()
+        // Queue for thread-safe message handling
+        private Queue<Action> messageQueue = new Queue<Action>();
+
+        // Reconnection settings
+        private float reconnectDelay = 3f;
+        private int maxReconnectAttempts = 5;
+        private int reconnectAttempts = 0;
+        private bool shouldReconnect = true;
+
+        public bool IsConnected => isConnected;
+
+        // Models for messages
+        [Serializable]
+        private class SocketMessage
         {
-            if (_instance != null && _instance != this)
-            {
-                Destroy(gameObject);
-                return;
-            }
-            _instance = this;
-            DontDestroyOnLoad(gameObject);
+            public string eventName;
+            public string data;
+            public long timestamp;
         }
 
-        public void Initialize(string url, float reconnectDelay, int maxAttempts)
+        [Serializable]
+        private class BackendMessage
         {
-            this.serverUrl = url;
-            this.reconnectDelay = reconnectDelay;
-            this.maxReconnectAttempts = maxAttempts;
-            
-            Debug.Log($"[CLIENT] Initialized: {serverUrl}");
+            public string @event;
+            public string data;
+            public string eventValue => @event;
         }
 
-        public async void Connect()
+        public async void Connect(string url)
         {
-            if (isConnecting || IsConnected)
-            {
-                Debug.LogWarning("[CLIENT] Already connected or connecting");
-                return;
-            }
+            if (isConnecting || isConnected) return;
 
+            serverUrl = url;
             isConnecting = true;
 
-            try
-            {
-                websocket = new NativeWebSocket.WebSocket(serverUrl);
+            websocket = new NativeWebSocket.WebSocket(serverUrl);
 
-                websocket.OnOpen += () =>
+            websocket.OnOpen += () =>
+            {
+                messageQueue.Enqueue(() =>
                 {
-                    Debug.Log($"[CLIENT] Connected to {serverUrl}");
+                    isConnected = true;
                     isConnecting = false;
                     reconnectAttempts = 0;
                     OnConnected?.Invoke();
-                };
+                });
+            };
 
-                websocket.OnError += (e) =>
+            websocket.OnError += (e) =>
+            {
+                messageQueue.Enqueue(() =>
                 {
-                    Debug.LogError($"[CLIENT] Error: {e}");
-                    isConnecting = false;
-                    OnError?.Invoke(e);
-                };
+                    Debug.LogError($"Error: {e}");
+                });
+            };
 
-                websocket.OnClose += (e) =>
+            websocket.OnClose += (e) =>
+            {
+                messageQueue.Enqueue(() =>
                 {
-                    Debug.Log($"[CLIENT] Disconnected: {e}");
+                    isConnected = false;
                     isConnecting = false;
                     OnDisconnected?.Invoke();
-                    
-                    if (reconnectAttempts < maxReconnectAttempts)
-                    {
-                        reconnectTimer = reconnectDelay;
-                    }
-                };
 
-                websocket.OnMessage += (bytes) =>
-                {
-                    string message = System.Text.Encoding.UTF8.GetString(bytes);
-                    HandleMessage(message);
-                };
+                    if (shouldReconnect && reconnectAttempts < maxReconnectAttempts)
+                        StartCoroutine(ReconnectCoroutine());
+                });
+            };
 
+            websocket.OnMessage += (bytes) =>
+            {
+                var message = System.Text.Encoding.UTF8.GetString(bytes);
+                messageQueue.Enqueue(() => HandleMessage(message));
+            };
+
+            try
+            {
                 await websocket.Connect();
             }
             catch (Exception ex)
             {
-                Debug.LogError($"[CLIENT] Connection error: {ex.Message}");
+                Debug.LogError($"Connection failed: {ex.Message}");
                 isConnecting = false;
-                OnError?.Invoke(ex.Message);
+
+                if (shouldReconnect && reconnectAttempts < maxReconnectAttempts)
+                    StartCoroutine(ReconnectCoroutine());
             }
         }
 
-        public void Disconnect()
+        private IEnumerator ReconnectCoroutine()
         {
-            reconnectAttempts = maxReconnectAttempts; 
-            websocket?.Close();
-            Debug.Log("[CLIENT] Disconnect requested");
+            reconnectAttempts++;
+            yield return new WaitForSeconds(reconnectDelay);
+            Connect(serverUrl);
         }
 
-        public async void SendMessage(string eventName, string jsonData)
+        public void SendMessage(string eventName, string data)
         {
-            if (!IsConnected)
-            {
-                Debug.LogWarning($"[CLIENT] Not connected, cannot send: {eventName}");
-                return;
-            }
+            if (!isConnected) return;
 
-            try
+            var message = new SocketMessage
             {
-                var message = new SocketMessage
-                {
-                    eventName = eventName,
-                    data = jsonData,
-                    timestamp = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()
-                };
+                eventName = eventName,
+                data = data,
+                timestamp = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()
+            };
 
-                string json = JsonUtility.ToJson(message);
-                await websocket.SendText(json);
-                
-                Debug.Log($"[CLIENT] Sent: {eventName}");
-            }
-            catch (Exception ex)
-            {
-                Debug.LogError($"[CLIENT] Send error: {ex.Message}");
-                OnError?.Invoke(ex.Message);
-            }
+            string json = JsonUtility.ToJson(message);
+            websocket.SendText(json);
         }
 
         private void HandleMessage(string message)
         {
             try
             {
+                var backendMsg = JsonUtility.FromJson<BackendMessage>(message);
+
+                if (!string.IsNullOrEmpty(backendMsg.eventValue))
+                {
+                    OnMessage?.Invoke(backendMsg.eventValue, backendMsg.data ?? "{}");
+                    return;
+                }
+
                 var socketMessage = JsonUtility.FromJson<SocketMessage>(message);
-                Debug.Log($"[CLIENT] Received: {socketMessage.eventName}");
-                OnMessage?.Invoke(socketMessage.eventName, socketMessage.data);
+
+                if (!string.IsNullOrEmpty(socketMessage.eventName))
+                {
+                    OnMessage?.Invoke(socketMessage.eventName, socketMessage.data ?? "{}");
+                    return;
+                }
             }
             catch (Exception ex)
             {
-                Debug.LogError($"[CLIENT] Parse error: {ex.Message}");
+                Debug.LogError($"Parse error: {ex.Message}");
             }
         }
 
@@ -173,42 +160,20 @@ namespace Network.WebSocket.Core
             #if !UNITY_WEBGL || UNITY_EDITOR
             websocket?.DispatchMessageQueue();
             #endif
-            
-            if (reconnectTimer > 0)
-            {
-                reconnectTimer -= Time.deltaTime;
-                if (reconnectTimer <= 0 && !IsConnected && reconnectAttempts < maxReconnectAttempts)
-                {
-                    reconnectAttempts++;
-                    Debug.Log($"[CLIENT] Reconnection attempt {reconnectAttempts}/{maxReconnectAttempts}");
-                    Connect();
-                }
-            }
+
+            while (messageQueue.Count > 0)
+                messageQueue.Dequeue()?.Invoke();
         }
 
-        private async void OnApplicationQuit()
+        public void Disconnect()
         {
-            if (websocket != null)
-            {
-                await websocket.Close();
-            }
+            shouldReconnect = false;
+
+            if (websocket != null && websocket.State == WebSocketState.Open)
+                websocket.Close();
         }
 
-        private void OnDestroy()
-        {
-            if (_instance == this)
-            {
-                websocket?.Close();
-                _instance = null;
-            }
-        }
-
-        [Serializable]
-        private class SocketMessage
-        {
-            public string eventName;
-            public string data;
-            public long timestamp;
-        }
+        private void OnDestroy() => Disconnect();
+        private void OnApplicationQuit() => Disconnect();
     }
 }

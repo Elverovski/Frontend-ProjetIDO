@@ -2,9 +2,7 @@ using System;
 
 namespace Network.WebSocket.Models
 {
-    /// <summary>
-    /// WebRTC Offer
-    /// </summary>
+    // WebRTC offer data
     [Serializable]
     public class WebRTCOffer
     {
@@ -13,9 +11,7 @@ namespace Network.WebSocket.Models
         public string from;   
     }
 
-    /// <summary>
-    /// WebRTC Answer
-    /// </summary>
+    // WebRTC answer data
     [Serializable]
     public class WebRTCAnswer
     {
@@ -24,9 +20,7 @@ namespace Network.WebSocket.Models
         public string from;
     }
 
-    /// <summary>
-    /// ICE Candidate
-    /// </summary>
+    // ICE candidate data
     [Serializable]
     public class ICECandidate
     {
@@ -37,9 +31,7 @@ namespace Network.WebSocket.Models
         public string from;
     }
 
-    /// <summary>
-    /// Notification de connexion
-    /// </summary>
+    // Peer connection notification
     [Serializable]
     public class PeerConnectionNotification
     {

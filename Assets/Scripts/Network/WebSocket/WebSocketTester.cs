@@ -5,7 +5,6 @@ using Network.WebSocket.Models;
 public class WebSocketTester : MonoBehaviour
 {
     [Header("Configuration")]
-    [SerializeField] private string serverUrl = "ws://localhost:3000";
     [SerializeField] private string username = "frontend";
     [SerializeField] private string password = "1234";
 
@@ -22,17 +21,21 @@ public class WebSocketTester : MonoBehaviour
         Debug.Log("========================================");
 
         wsManager = WebSocketManager.Instance;
-        wsManager.SetServerUrl(serverUrl);
-        
+
+        // Register WebSocket events
         wsManager.OnConnected += OnConnected;
         wsManager.OnAuthenticated += OnAuthenticated;
         wsManager.OnDisconnected += OnDisconnected;
         wsManager.OnError += OnError;
-        
-        wsManager.Signaling.OnOfferReceived += OnOfferReceived;
-        wsManager.Signaling.OnAnswerReceived += OnAnswerReceived;
-        wsManager.Signaling.OnICECandidateReceived += OnICEReceived;
-        wsManager.Signaling.OnRobotConnected += OnRobotConnected;
+
+        // Register signaling events if ready
+        if (wsManager.Signaling != null)
+        {
+            wsManager.Signaling.OnOfferReceived += OnOfferReceived;
+            wsManager.Signaling.OnAnswerReceived += OnAnswerReceived;
+            wsManager.Signaling.OnICECandidateReceived += OnICEReceived;
+            wsManager.Signaling.OnRobotConnected += OnRobotConnected;
+        }
 
         Debug.Log("[TESTER] Keyboard Controls:");
         Debug.Log("  C - Connect");
@@ -40,6 +43,7 @@ public class WebSocketTester : MonoBehaviour
         Debug.Log("  D - Disconnect");
         Debug.Log("========================================\n");
 
+        // Auto connect
         if (autoConnect)
         {
             wsManager.Connect();
@@ -53,12 +57,14 @@ public class WebSocketTester : MonoBehaviour
         if (Input.GetKeyDown(KeyCode.D)) wsManager.Disconnect();
     }
 
+    // Called when connected
     void OnConnected()
     {
         Debug.Log("========================================");
         Debug.Log("[TESTER] CONNECTED TO SERVER");
         Debug.Log("========================================");
-        
+
+        // Auto login after 1 second
         if (autoLogin) Invoke(nameof(AutoLogin), 1f);
     }
 
@@ -70,6 +76,7 @@ public class WebSocketTester : MonoBehaviour
         }
     }
 
+    // Called when authenticated
     void OnAuthenticated()
     {
         Debug.Log("========================================");
@@ -78,6 +85,7 @@ public class WebSocketTester : MonoBehaviour
         Debug.Log("========================================");
     }
 
+    // Called when disconnected
     void OnDisconnected()
     {
         Debug.Log("========================================");
@@ -85,6 +93,7 @@ public class WebSocketTester : MonoBehaviour
         Debug.Log("========================================");
     }
 
+    // Called on error
     void OnError(string error)
     {
         Debug.LogError("========================================");
@@ -92,6 +101,7 @@ public class WebSocketTester : MonoBehaviour
         Debug.LogError("========================================");
     }
 
+    // Signaling event handlers
     void OnOfferReceived(WebRTCOffer offer)
     {
         Debug.Log($"[TESTER] OFFER received from {offer.from}");
@@ -115,6 +125,7 @@ public class WebSocketTester : MonoBehaviour
         Debug.Log("========================================");
     }
 
+    // Unregister events on destroy
     void OnDestroy()
     {
         if (wsManager != null)
@@ -123,6 +134,14 @@ public class WebSocketTester : MonoBehaviour
             wsManager.OnAuthenticated -= OnAuthenticated;
             wsManager.OnDisconnected -= OnDisconnected;
             wsManager.OnError -= OnError;
+
+            if (wsManager.Signaling != null)
+            {
+                wsManager.Signaling.OnOfferReceived -= OnOfferReceived;
+                wsManager.Signaling.OnAnswerReceived -= OnAnswerReceived;
+                wsManager.Signaling.OnICECandidateReceived -= OnICEReceived;
+                wsManager.Signaling.OnRobotConnected -= OnRobotConnected;
+            }
         }
     }
 }

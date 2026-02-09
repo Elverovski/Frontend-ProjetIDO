@@ -9,10 +9,12 @@ namespace Network.WebSocket.Handlers
     {
         private SocketClient socketClient;
         
+        // Events for login/logout
         public event Action<LoginResponse> OnLoginSuccess;
         public event Action<string> OnLoginError;
         public event Action OnLogout;
 
+        // Authentication state
         private bool isAuthenticated = false;
         private string currentToken;
         private string currentUsername;
@@ -21,24 +23,25 @@ namespace Network.WebSocket.Handlers
         public string Token => currentToken;
         public string Username => currentUsername;
 
+        // Constructor
         public AuthHandler(SocketClient client)
         {
             socketClient = client;
             RegisterEvents();
         }
 
+        // Register WebSocket events
         private void RegisterEvents()
         {
             socketClient.OnMessage += HandleMessage;
             socketClient.OnDisconnected += HandleDisconnect;
         }
 
+        // Send login request
         public void Login(string username, string password, string deviceId = null)
         {
             if (string.IsNullOrEmpty(deviceId))
-            {
                 deviceId = SystemInfo.deviceUniqueIdentifier;
-            }
 
             var loginRequest = new LoginRequest
             {
@@ -53,6 +56,7 @@ namespace Network.WebSocket.Handlers
             Debug.Log($"[AUTH] Login attempt: {username}");
         }
 
+        // Send logout request
         public void Logout()
         {
             socketClient.SendMessage(SocketEvents.DISCONNECT, "{}");
@@ -60,6 +64,7 @@ namespace Network.WebSocket.Handlers
             Debug.Log("[AUTH] Logout");
         }
 
+        // Handle incoming messages
         private void HandleMessage(string eventName, string jsonData)
         {
             switch (eventName)
@@ -74,6 +79,7 @@ namespace Network.WebSocket.Handlers
             }
         }
 
+        // Process successful authentication
         private void HandleAuthSuccess(string jsonData)
         {
             try
@@ -104,6 +110,7 @@ namespace Network.WebSocket.Handlers
             }
         }
 
+        // Process authentication errors
         private void HandleAuthError(string jsonData)
         {
             try
@@ -118,14 +125,14 @@ namespace Network.WebSocket.Handlers
             }
         }
 
+        // Handle disconnect event
         private void HandleDisconnect()
         {
             if (isAuthenticated)
-            {
                 ClearAuth();
-            }
         }
 
+        // Clear authentication state
         private void ClearAuth()
         {
             isAuthenticated = false;
@@ -135,6 +142,7 @@ namespace Network.WebSocket.Handlers
             Debug.Log("[AUTH] Session ended");
         }
 
+        // Unregister events
         public void Dispose()
         {
             socketClient.OnMessage -= HandleMessage;

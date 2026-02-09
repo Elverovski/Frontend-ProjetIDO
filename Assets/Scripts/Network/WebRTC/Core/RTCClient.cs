@@ -25,10 +25,10 @@ namespace Network.WebRTC.Core
         private RTCPeerConnection peerConnection;
         private RTCConfig rtcConfig;
 
-        // Estado
+        // Connection state
         public bool IsConnected { get; private set; }
 
-        // Eventos
+        // Events
         public event Action OnConnected;
         public event Action OnDisconnected;
         public event Action<RTCIceCandidate> OnIceCandidate;
@@ -48,12 +48,14 @@ namespace Network.WebRTC.Core
             Debug.Log("[RTC CLIENT] Initialized");
         }
 
+        // Set RTC configuration
         public void Initialize(RTCConfig config)
         {
             rtcConfig = config;
             Debug.Log("[RTC CLIENT] Configuration set");
         }
 
+        // Create a new peer connection
         public void CreatePeerConnection()
         {
             if (peerConnection != null)
@@ -65,24 +67,28 @@ namespace Network.WebRTC.Core
             var configuration = rtcConfig.GetConfiguration();
             peerConnection = new RTCPeerConnection(ref configuration);
 
+            // ICE candidate event
             peerConnection.OnIceCandidate = candidate => 
             {
                 Debug.Log("[RTC CLIENT] ICE candidate generated");
                 OnIceCandidate?.Invoke(candidate);
             };
 
+            // Track received event
             peerConnection.OnTrack = e => 
             {
                 Debug.Log($"[RTC CLIENT] Track received: {e.Track.Kind}");
                 OnTrack?.Invoke(e);
             };
 
+            // Data channel received event
             peerConnection.OnDataChannel = channel => 
             {
                 Debug.Log($"[RTC CLIENT] Data channel received: {channel.Label}");
                 OnDataChannel?.Invoke(channel);
             };
 
+            // Connection state changes
             peerConnection.OnConnectionStateChange = state =>
             {
                 Debug.Log($"[RTC CLIENT] Connection state: {state}");
@@ -104,6 +110,7 @@ namespace Network.WebRTC.Core
             Debug.Log("[RTC CLIENT] Peer connection created");
         }
 
+        // Close and dispose peer connection
         public void ClosePeerConnection()
         {
             if (peerConnection == null) return;
@@ -116,6 +123,7 @@ namespace Network.WebRTC.Core
             Debug.Log("[RTC CLIENT] Peer connection closed");
         }
 
+        // Create WebRTC offer
         public void CreateOffer(Action<RTCSessionDescription> onSuccess, Action<string> onError)
         {
             StartCoroutine(CreateOfferCoroutine(onSuccess, onError));
@@ -154,6 +162,7 @@ namespace Network.WebRTC.Core
             onSuccess?.Invoke(desc);
         }
 
+        // Create WebRTC answer
         public void CreateAnswer(Action<RTCSessionDescription> onSuccess, Action<string> onError)
         {
             StartCoroutine(CreateAnswerCoroutine(onSuccess, onError));
@@ -192,6 +201,7 @@ namespace Network.WebRTC.Core
             onSuccess?.Invoke(desc);
         }
 
+        // Set remote description
         public void SetRemoteDescription(RTCSessionDescription desc, Action onSuccess, Action<string> onError)
         {
             StartCoroutine(SetRemoteDescriptionCoroutine(desc, onSuccess, onError));
@@ -219,6 +229,7 @@ namespace Network.WebRTC.Core
             onSuccess?.Invoke();
         }
 
+        // Add ICE candidate
         public void AddIceCandidate(RTCIceCandidate candidate)
         {
             if (peerConnection == null)
@@ -231,6 +242,7 @@ namespace Network.WebRTC.Core
             Debug.Log("[RTC CLIENT] ICE candidate added");
         }
 
+        // Create data channel
         public RTCDataChannel CreateDataChannel(string label)
         {
             if (peerConnection == null)
@@ -244,11 +256,13 @@ namespace Network.WebRTC.Core
             return dataChannel;
         }
 
+        // Get peer connection instance
         public RTCPeerConnection GetPeerConnection()
         {
             return peerConnection;
         }
 
+        // Cleanup on destroy
         private void OnDestroy()
         {
             ClosePeerConnection();

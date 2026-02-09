@@ -25,20 +25,19 @@ namespace Network.WebSocket
 
         [Header("Configuration")]
         [SerializeField] private string serverUrl = "ws://localhost:3000";
-        [SerializeField] private float reconnectDelay = 3f;
-        [SerializeField] private int maxReconnectAttempts = 5;
 
         private SocketClient socketClient;
         private AuthHandler authHandler;
-        private Handlers.SignalingHandler signalingHandler;
+        private SignalingHandler signalingHandler;
 
         public AuthHandler Auth => authHandler;
-        public Handlers.SignalingHandler Signaling => signalingHandler;  
+        public SignalingHandler Signaling => signalingHandler;
 
-        public bool IsConnected => socketClient?.IsConnected ?? false;
-        public bool IsAuthenticated => authHandler?.IsAuthenticated ?? false;
+        public bool IsConnected => socketClient != null && socketClient.IsConnected;
+        public bool IsAuthenticated => authHandler != null && authHandler.IsAuthenticated;
         public string Username => authHandler?.Username;
 
+        // Events for connection and authentication
         public event Action OnConnected;
         public event Action OnDisconnected;
         public event Action OnAuthenticated;
@@ -51,25 +50,30 @@ namespace Network.WebSocket
                 Destroy(gameObject);
                 return;
             }
+
             _instance = this;
             DontDestroyOnLoad(gameObject);
 
             InitializeWebSocket();
         }
 
+        // Setup WebSocket client and handlers
         private void InitializeWebSocket()
         {
             Debug.Log("[WS MANAGER] Initializing...");
 
-            socketClient = SocketClient.Instance;
-            socketClient.Initialize(serverUrl, reconnectDelay, maxReconnectAttempts);
+            // Create SocketClient object
+            GameObject socketGO = new GameObject("SocketClient");
+            socketGO.transform.SetParent(transform);
+            socketClient = socketGO.AddComponent<SocketClient>();
 
+            // Setup auth and signaling handlers
             authHandler = new AuthHandler(socketClient);
-            signalingHandler = new Handlers.SignalingHandler(socketClient);
+            signalingHandler = new SignalingHandler(socketClient);
 
+            // Register events
             socketClient.OnConnected += HandleConnected;
             socketClient.OnDisconnected += HandleDisconnected;
-            socketClient.OnError += HandleError;
 
             authHandler.OnLoginSuccess += HandleLoginSuccess;
             authHandler.OnLoginError += HandleLoginError;
@@ -81,6 +85,7 @@ namespace Network.WebSocket
             Debug.Log("[WS MANAGER] Initialized");
         }
 
+        // Connect to server
         public void Connect()
         {
             if (IsConnected)
@@ -88,10 +93,12 @@ namespace Network.WebSocket
                 Debug.LogWarning("[WS MANAGER] Already connected");
                 return;
             }
+
             Debug.Log($"[WS MANAGER] Connecting to {serverUrl}...");
-            socketClient.Connect();
+            socketClient.Connect(serverUrl);
         }
 
+        // Disconnect from server
         public void Disconnect()
         {
             Debug.Log("[WS MANAGER] Disconnecting...");
@@ -99,6 +106,7 @@ namespace Network.WebSocket
             socketClient.Disconnect();
         }
 
+        // Send login request
         public void Login(string username, string password)
         {
             if (!IsConnected)
@@ -106,40 +114,26 @@ namespace Network.WebSocket
                 Debug.LogError("[WS MANAGER] Not connected");
                 return;
             }
+
             Debug.Log($"[WS MANAGER] Login: {username}");
             authHandler.Login(username, password);
         }
 
-        public void SetServerUrl(string url)
-        {
-            if (IsConnected)
-            {
-                Debug.LogWarning("[WS MANAGER] Disconnect first");
-                return;
-            }
-            serverUrl = url;
-            socketClient.Initialize(serverUrl, reconnectDelay, maxReconnectAttempts);
-            Debug.Log($"[WS MANAGER] URL configured: {serverUrl}");
-        }
-
+        // Handle connection event
         private void HandleConnected()
         {
             Debug.Log("[WS MANAGER] CONNECTED");
             OnConnected?.Invoke();
         }
 
+        // Handle disconnection event
         private void HandleDisconnected()
         {
             Debug.Log("[WS MANAGER] DISCONNECTED");
             OnDisconnected?.Invoke();
         }
 
-        private void HandleError(string error)
-        {
-            Debug.LogError($"[WS MANAGER] ERROR: {error}");
-            OnError?.Invoke(error);
-        }
-
+        // Handle successful login
         private void HandleLoginSuccess(LoginResponse response)
         {
             Debug.Log($"[WS MANAGER] AUTHENTICATED: {response.userData.username}");
@@ -147,40 +141,29 @@ namespace Network.WebSocket
             OnAuthenticated?.Invoke();
         }
 
+        // Handle login failure
         private void HandleLoginError(string error)
         {
             Debug.LogError($"[WS MANAGER] AUTH FAILED: {error}");
-            OnError?.Invoke($"Login failed: {error}");
+            OnError?.Invoke(error);
         }
 
+        // Handle logout
         private void HandleLogout()
         {
             Debug.Log("[WS MANAGER] Session ended");
         }
 
+        // Handle robot available notification
         private void HandleRobotConnected(string username)
         {
             Debug.Log($"[WS MANAGER] Robot available: {username}");
         }
 
+        // Handle frontend connected notification
         private void HandleFrontendConnected(string username)
         {
             Debug.Log($"[WS MANAGER] Frontend connected: {username}");
-        }
-
-        private void OnDestroy()
-        {
-            if (socketClient != null)
-            {
-                socketClient.OnConnected -= HandleConnected;
-                socketClient.OnDisconnected -= HandleDisconnected;
-                socketClient.OnError -= HandleError;
-            }
-
-            authHandler?.Dispose();
-            signalingHandler?.Dispose();
-
-            if (_instance == this) _instance = null;
         }
 
         private void OnApplicationQuit()

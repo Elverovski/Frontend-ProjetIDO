@@ -2,9 +2,7 @@ using System;
 
 namespace Network.WebSocket.Models
 {
-    /// <summary>
-    /// Requête de login
-    /// </summary>
+    // Login request data
     [Serializable]
     public class LoginRequest
     {
@@ -13,9 +11,7 @@ namespace Network.WebSocket.Models
         public string deviceId;
     }
 
-    /// <summary>
-    /// Réponse de login réussie
-    /// </summary>
+    // Login response data
     [Serializable]
     public class LoginResponse
     {
@@ -26,9 +22,7 @@ namespace Network.WebSocket.Models
         public UserData userData;
     }
 
-    /// <summary>
-    /// Données utilisateur
-    /// </summary>
+    // User information
     [Serializable]
     public class UserData
     {
@@ -37,9 +31,7 @@ namespace Network.WebSocket.Models
         public string[] permissions;
     }
 
-    /// <summary>
-    /// Erreur générique
-    /// </summary>
+    // Generic error response
     [Serializable]
     public class ErrorResponse
     {
