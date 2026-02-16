@@ -1,12 +1,18 @@
 using System;
 using UnityEngine;
+using Network.WebSocket.Interfaces;
 using Network.WebSocket.Core;
 using Network.WebSocket.Handlers;
 using Network.WebSocket.Models;
 
 namespace Network.WebSocket
 {
-    public class WebSocketManager : MonoBehaviour
+    /// <summary>
+    /// Main WebSocket manager - orchestrates all WebSocket operations.
+    /// Manages authentication, signaling, and connection lifecycle.
+    /// Singleton pattern for global access throughout the application.
+    /// </summary>
+    public class WebSocketManager : MonoBehaviour, IWebSocketManager
     {
         private static WebSocketManager _instance;
         public static WebSocketManager Instance
@@ -15,7 +21,7 @@ namespace Network.WebSocket
             {
                 if (_instance == null)
                 {
-                    GameObject go = new GameObject("WebSocketManager");
+                    var go = new GameObject("WebSocketManager");
                     _instance = go.AddComponent<WebSocketManager>();
                     DontDestroyOnLoad(go);
                 }
@@ -26,18 +32,20 @@ namespace Network.WebSocket
         [Header("Configuration")]
         [SerializeField] private string serverUrl = "ws://localhost:3000";
 
-        private SocketClient socketClient;
-        private AuthHandler authHandler;
-        private SignalingHandler signalingHandler;
+        private ISocketClient socketClient;
+        private IAuthHandler authHandler;
+        private ISignalingHandler signalingHandler;
 
-        public AuthHandler Auth => authHandler;
-        public SignalingHandler Signaling => signalingHandler;
+        // Public accessors for handlers
+        public IAuthHandler Auth => authHandler;
+        public ISignalingHandler Signaling => signalingHandler;
 
-        public bool IsConnected => socketClient != null && socketClient.IsConnected;
-        public bool IsAuthenticated => authHandler != null && authHandler.IsAuthenticated;
+        // Connection state
+        public bool IsConnected => socketClient?.IsConnected ?? false;
+        public bool IsAuthenticated => authHandler?.IsAuthenticated ?? false;
         public string Username => authHandler?.Username;
 
-        // Events for connection and authentication
+        // Events for external subscribers
         public event Action OnConnected;
         public event Action OnDisconnected;
         public event Action OnAuthenticated;
@@ -57,35 +65,49 @@ namespace Network.WebSocket
             InitializeWebSocket();
         }
 
-        // Setup WebSocket client and handlers
+        /// <summary>
+        /// Sets up WebSocket client and handlers.
+        /// </summary>
         private void InitializeWebSocket()
         {
             Debug.Log("[WS MANAGER] Initializing...");
 
-            // Create SocketClient object
-            GameObject socketGO = new GameObject("SocketClient");
+            // Create socket client as child GameObject
+            var socketGO = new GameObject("SocketClient");
             socketGO.transform.SetParent(transform);
             socketClient = socketGO.AddComponent<SocketClient>();
 
-            // Setup auth and signaling handlers
+            // Create handlers
             authHandler = new AuthHandler(socketClient);
             signalingHandler = new SignalingHandler(socketClient);
 
-            // Register events
-            socketClient.OnConnected += HandleConnected;
-            socketClient.OnDisconnected += HandleDisconnected;
-
-            authHandler.OnLoginSuccess += HandleLoginSuccess;
-            authHandler.OnLoginError += HandleLoginError;
-            authHandler.OnLogout += HandleLogout;
-
-            signalingHandler.OnRobotConnected += HandleRobotConnected;
-            signalingHandler.OnFrontendConnected += HandleFrontendConnected;
+            RegisterEvents();
 
             Debug.Log("[WS MANAGER] Initialized");
         }
 
-        // Connect to server
+        /// <summary>
+        /// Subscribes to events from socket client and handlers.
+        /// </summary>
+        private void RegisterEvents()
+        {
+            // Socket connection events
+            socketClient.OnConnected += HandleConnected;
+            socketClient.OnDisconnected += HandleDisconnected;
+
+            // Authentication events
+            authHandler.OnLoginSuccess += HandleLoginSuccess;
+            authHandler.OnLoginError += HandleLoginError;
+            authHandler.OnLogout += HandleLogout;
+
+            // Signaling notification events
+            signalingHandler.OnRobotConnected += HandleRobotConnected;
+            signalingHandler.OnFrontendConnected += HandleFrontendConnected;
+        }
+
+        /// <summary>
+        /// Connects to the WebSocket server.
+        /// </summary>
         public void Connect()
         {
             if (IsConnected)
@@ -98,7 +120,10 @@ namespace Network.WebSocket
             socketClient.Connect(serverUrl);
         }
 
-        // Disconnect from server
+        /// <summary>
+        /// Disconnects from the WebSocket server.
+        /// Logs out if authenticated.
+        /// </summary>
         public void Disconnect()
         {
             Debug.Log("[WS MANAGER] Disconnecting...");
@@ -106,7 +131,10 @@ namespace Network.WebSocket
             socketClient.Disconnect();
         }
 
-        // Send login request
+        /// <summary>
+        /// Attempts to login with credentials.
+        /// Requires active WebSocket connection.
+        /// </summary>
         public void Login(string username, string password)
         {
             if (!IsConnected)
@@ -119,52 +147,48 @@ namespace Network.WebSocket
             authHandler.Login(username, password);
         }
 
-        // Handle connection event
+        #region Event Handlers
+
         private void HandleConnected()
         {
             Debug.Log("[WS MANAGER] CONNECTED");
             OnConnected?.Invoke();
         }
 
-        // Handle disconnection event
         private void HandleDisconnected()
         {
             Debug.Log("[WS MANAGER] DISCONNECTED");
             OnDisconnected?.Invoke();
         }
 
-        // Handle successful login
         private void HandleLoginSuccess(LoginResponse response)
         {
             Debug.Log($"[WS MANAGER] AUTHENTICATED: {response.userData.username}");
-            Debug.Log($"[WS MANAGER] Token: {response.token.Substring(0, 10)}...");
             OnAuthenticated?.Invoke();
         }
 
-        // Handle login failure
         private void HandleLoginError(string error)
         {
             Debug.LogError($"[WS MANAGER] AUTH FAILED: {error}");
             OnError?.Invoke(error);
         }
 
-        // Handle logout
         private void HandleLogout()
         {
             Debug.Log("[WS MANAGER] Session ended");
         }
 
-        // Handle robot available notification
         private void HandleRobotConnected(string username)
         {
             Debug.Log($"[WS MANAGER] Robot available: {username}");
         }
 
-        // Handle frontend connected notification
         private void HandleFrontendConnected(string username)
         {
             Debug.Log($"[WS MANAGER] Frontend connected: {username}");
         }
+
+        #endregion
 
         private void OnApplicationQuit()
         {

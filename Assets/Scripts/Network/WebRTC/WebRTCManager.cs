@@ -1,16 +1,15 @@
 using System;
 using UnityEngine;
+using Network.WebRTC.Interfaces;
 using Network.WebRTC.Core;
 using Network.WebRTC.Handlers;
 using Network.WebRTC.Models;
+using Network.WebSocket.Interfaces;
 using Network.WebSocket;
 
 namespace Network.WebRTC
 {
-    /// <summary>
-    /// Main WebRTC manager – orchestrates peer connection, video, and data channels
-    /// </summary>
-    public class WebRTCManager : MonoBehaviour
+    public class WebRTCManager : MonoBehaviour, IWebRTCManager
     {
         private static WebRTCManager _instance;
         public static WebRTCManager Instance
@@ -19,7 +18,7 @@ namespace Network.WebRTC
             {
                 if (_instance == null)
                 {
-                    GameObject go = new GameObject("WebRTCManager");
+                    var go = new GameObject("WebRTCManager");
                     _instance = go.AddComponent<WebRTCManager>();
                     DontDestroyOnLoad(go);
                 }
@@ -30,27 +29,22 @@ namespace Network.WebRTC
         [Header("Configuration")]
         [SerializeField] private RTCConfig rtcConfig;
 
-        // Core components
-        private RTCClient rtcClient;
-        private WebSocketManager wsManager;
+        private IRtcClient rtcClient;
+        private IWebSocketManager wsManager;
 
-        // Handlers
-        private PeerConnectionHandler peerConnectionHandler;
-        private DataChannelHandler dataChannelHandler;
-        private VideoStreamHandler videoStreamHandler;
-        private StatsHandler statsHandler;
+        private IPeerConnectionHandler peerConnectionHandler;
+        private IDataChannelHandler dataChannelHandler;
+        private IVideoStreamHandler videoStreamHandler;
+        private IStatsHandler statsHandler;
 
-        // Public accessors
-        public DataChannelHandler DataChannel => dataChannelHandler;
-        public VideoStreamHandler VideoStream => videoStreamHandler;
-        public PeerConnectionHandler PeerConnection => peerConnectionHandler;
-        public StatsHandler Stats => statsHandler;
+        public IDataChannelHandler DataChannel => dataChannelHandler;
+        public IVideoStreamHandler VideoStream => videoStreamHandler;
+        public IPeerConnectionHandler PeerConnection => peerConnectionHandler;
+        public IStatsHandler Stats => statsHandler;
 
-        // State
         public bool IsConnected => rtcClient?.IsConnected ?? false;
         public bool IsDataChannelReady => dataChannelHandler?.IsReady ?? false;
 
-        // Events
         public event Action OnWebRTCConnected;
         public event Action OnWebRTCDisconnected;
         public event Action OnDataChannelReady;
@@ -66,35 +60,38 @@ namespace Network.WebRTC
             }
             _instance = this;
             DontDestroyOnLoad(gameObject);
+        }
 
+        private void Start()
+        {
             InitializeWebRTC();
         }
 
-        // Initialize WebRTC components and handlers
         private void InitializeWebRTC()
         {
             Debug.Log("[WEBRTC MANAGER] Initializing...");
 
-            // Use default config if none provided
-            if (rtcConfig == null)
-            {
-                rtcConfig = new RTCConfig();
-            }
+            Unity.WebRTC.WebRTC.Initialize();
+            Debug.Log("[WEBRTC MANAGER] WebRTC initialized");
 
-            // Get WebSocket manager
+            rtcConfig ??= new RTCConfig();
+
             wsManager = WebSocketManager.Instance;
-
-            // Initialize RTC client
             rtcClient = RTCClient.Instance;
             rtcClient.Initialize(rtcConfig);
 
-            // Initialize handlers
             peerConnectionHandler = new PeerConnectionHandler(rtcClient, wsManager, this);
             dataChannelHandler = new DataChannelHandler(rtcClient);
             videoStreamHandler = new VideoStreamHandler(rtcClient);
             statsHandler = new StatsHandler(rtcClient, this);
 
-            // Subscribe to RTC events
+            RegisterEvents();
+
+            Debug.Log("[WEBRTC MANAGER] Initialized");
+        }
+
+        private void RegisterEvents()
+        {
             rtcClient.OnConnected += HandleRTCConnected;
             rtcClient.OnDisconnected += HandleRTCDisconnected;
 
@@ -106,80 +103,31 @@ namespace Network.WebRTC
 
             videoStreamHandler.OnVideoTrackAdded += HandleVideoTrackAdded;
 
-            // Subscribe to WebSocket robot connected event
             wsManager.Signaling.OnRobotConnected += HandleRobotConnected;
-
-            Debug.Log("[WEBRTC MANAGER] Initialized");
         }
 
-        // Connect to a robot peer
         public void ConnectToPeer(string robotUsername)
         {
             Debug.Log($"[WEBRTC MANAGER] Connecting to peer: {robotUsername}");
             peerConnectionHandler.InitiateConnection(robotUsername);
         }
 
-        // Send vehicle movement command
-        public void SendMovementCommand(float throttle, float steering, float brake = 0f)
-        {
-            if (!IsDataChannelReady)
-            {
-                Debug.LogWarning("[WEBRTC MANAGER] Data channel not ready");
-                return;
-            }
-            dataChannelHandler.SendMovementCommand(throttle, steering, brake);
-        }
-
-        // Send camera command
-        public void SendCameraCommand(float pan, float tilt)
-        {
-            if (!IsDataChannelReady)
-            {
-                Debug.LogWarning("[WEBRTC MANAGER] Data channel not ready");
-                return;
-            }
-            dataChannelHandler.SendCameraCommand(pan, tilt);
-        }
-
-        // Send custom vehicle command
-        public void SendVehicleCommand(VehicleCommand command)
-        {
-            if (!IsDataChannelReady)
-            {
-                Debug.LogWarning("[WEBRTC MANAGER] Data channel not ready");
-                return;
-            }
-            dataChannelHandler.SendVehicleCommand(command);
-        }
-
-        // Send emergency stop command
-        public void SendEmergencyStop(string reason = "User initiated")
-        {
-            Debug.Log($"[WEBRTC MANAGER] Emergency stop: {reason}");
-            dataChannelHandler?.SendEmergencyStop(reason);
-        }
-
-        // Start stats monitoring
         public void StartStatsMonitoring(float interval = 1f)
         {
             statsHandler?.StartMonitoring(interval);
         }
 
-        // Stop stats monitoring
         public void StopStatsMonitoring()
         {
             statsHandler?.StopMonitoring();
         }
 
-        // Disconnect from peer
         public void Disconnect()
         {
             Debug.Log("[WEBRTC MANAGER] Disconnecting...");
             statsHandler?.StopMonitoring();
             rtcClient?.ClosePeerConnection();
         }
-
-        #region Event Handlers
 
         private void HandleRTCConnected()
         {
@@ -223,11 +171,12 @@ namespace Network.WebRTC
         private void HandleRobotConnected(string robotUsername)
         {
             Debug.Log($"[WEBRTC MANAGER] Robot connected: {robotUsername}");
-            Debug.Log("[WEBRTC MANAGER] Auto-connecting to robot...");
-            ConnectToPeer(robotUsername);
         }
 
-        #endregion
+        private void Update()
+        {
+            videoStreamHandler?.Update();
+        }
 
         private void OnDestroy()
         {
@@ -239,7 +188,7 @@ namespace Network.WebRTC
                 rtcClient.OnDisconnected -= HandleRTCDisconnected;
             }
 
-            if (wsManager != null && wsManager.Signaling != null)
+            if (wsManager?.Signaling != null)
             {
                 wsManager.Signaling.OnRobotConnected -= HandleRobotConnected;
             }
@@ -248,6 +197,11 @@ namespace Network.WebRTC
             dataChannelHandler?.Dispose();
             videoStreamHandler?.Dispose();
             statsHandler?.Dispose();
+
+            Unity.WebRTC.WebRTC.Dispose();
+            Debug.Log("[WEBRTC MANAGER] WebRTC disposed");
+
+            Debug.Log("[WEBRTC MANAGER] Cleanup complete");
 
             if (_instance == this)
             {

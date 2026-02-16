@@ -1,29 +1,26 @@
 using System;
 using UnityEngine;
 using Unity.WebRTC;
-using Network.WebRTC.Core;
+using Network.WebRTC.Interfaces;
 using Network.WebRTC.Models;
-using Network.WebSocket;
+using Network.WebSocket.Interfaces;
 using Network.WebSocket.Models;
 
 namespace Network.WebRTC.Handlers
 {
-    /// <summary>
-    /// Handles WebRTC negotiation (SDP/ICE) with backend
-    /// </summary>
-    public class PeerConnectionHandler
+    public class PeerConnectionHandler : IPeerConnectionHandler
     {
-        private RTCClient rtcClient;
-        private WebSocketManager wsManager;
-        private WebRTCManager webRTCManager;
+        private readonly IRtcClient rtcClient;
+        private readonly IWebSocketManager wsManager;
+        private readonly IWebRTCManager webRTCManager;
 
         public event Action OnNegotiationComplete;
         public event Action<string> OnNegotiationError;
 
-        private bool isOfferer; // Is Unity initializing the connection?
-        private string targetPeer; // Pi user
+        private bool isOfferer;
+        private string targetPeer;
 
-        public PeerConnectionHandler(RTCClient client, WebSocketManager ws, WebRTCManager manager)
+        public PeerConnectionHandler(IRtcClient client, IWebSocketManager ws, IWebRTCManager manager)
         {
             rtcClient = client;
             wsManager = ws;
@@ -32,7 +29,6 @@ namespace Network.WebRTC.Handlers
             RegisterEvents();
         }
 
-        // Register WebSocket and RTC events
         private void RegisterEvents()
         {
             wsManager.Signaling.OnOfferReceived += HandleOfferReceived;
@@ -42,7 +38,6 @@ namespace Network.WebRTC.Handlers
             rtcClient.OnIceCandidate += HandleLocalIceCandidate;
         }
 
-        // Start connection (Unity is offerer)
         public void InitiateConnection(string targetPeerUsername)
         {
             isOfferer = true;
@@ -50,16 +45,13 @@ namespace Network.WebRTC.Handlers
 
             Debug.Log($"[PEER CONNECTION] Initiating connection to {targetPeer}");
 
-            // Create peer connection first
             rtcClient.CreatePeerConnection();
 
-            // Create data channels if available
-            if (webRTCManager != null && webRTCManager.DataChannel != null)
+            if (webRTCManager?.DataChannel != null)
             {
                 webRTCManager.DataChannel.CreateDataChannels();
             }
 
-            // Create and send offer
             rtcClient.CreateOffer(
                 onSuccess: (desc) => 
                 {
@@ -74,7 +66,6 @@ namespace Network.WebRTC.Handlers
             );
         }
 
-        // Handle incoming offer (Pi is offerer)
         private void HandleOfferReceived(WebRTCOffer offer)
         {
             isOfferer = false;
@@ -116,7 +107,6 @@ namespace Network.WebRTC.Handlers
             );
         }
 
-        // Handle incoming answer (Unity is offerer)
         private void HandleAnswerReceived(WebRTCAnswer answer)
         {
             if (!isOfferer)
@@ -147,7 +137,6 @@ namespace Network.WebRTC.Handlers
             );
         }
 
-        // Send ICE candidate to remote peer
         private void HandleLocalIceCandidate(RTCIceCandidate candidate)
         {
             if (string.IsNullOrEmpty(targetPeer))
@@ -158,37 +147,30 @@ namespace Network.WebRTC.Handlers
 
             Debug.Log($"[PEER CONNECTION] Sending ICE candidate to {targetPeer}");
 
-            var iceCandidatePayload = new IceCandidatePayload
-            {
-                candidate = candidate.Candidate,
-                sdpMid = candidate.SdpMid,
-                sdpMLineIndex = candidate.SdpMLineIndex.GetValueOrDefault(0)
-            };
-
             wsManager.Signaling.SendICECandidate(
-                iceCandidatePayload.candidate,
-                iceCandidatePayload.sdpMid,
-                iceCandidatePayload.sdpMLineIndex,
+                candidate.Candidate,
+                candidate.SdpMid,
+                candidate.SdpMLineIndex ?? 0,
                 targetPeer
             );
         }
 
-        // Handle ICE candidate received from remote peer
         private void HandleICECandidateReceived(ICECandidate iceData)
         {
             Debug.Log($"[PEER CONNECTION] ICE candidate received from {iceData.from}");
 
-            var candidate = new RTCIceCandidate(new RTCIceCandidateInit
+            var candidateInit = new RTCIceCandidateInit
             {
                 candidate = iceData.candidate,
                 sdpMid = iceData.sdpMid,
                 sdpMLineIndex = iceData.sdpMLineIndex
-            });
+            };
+
+            var candidate = new RTCIceCandidate(candidateInit);
 
             rtcClient.AddIceCandidate(candidate);
         }
 
-        // Unregister events
         public void Dispose()
         {
             wsManager.Signaling.OnOfferReceived -= HandleOfferReceived;
@@ -198,4 +180,4 @@ namespace Network.WebRTC.Handlers
             rtcClient.OnIceCandidate -= HandleLocalIceCandidate;
         }
     }
-}
+} 

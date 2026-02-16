@@ -2,34 +2,31 @@ using System;
 using System.Linq;
 using UnityEngine;
 using Unity.WebRTC;
-using Network.WebRTC.Core;
+using Network.WebRTC.Interfaces;
 
 namespace Network.WebRTC.Handlers
 {
-    /// <summary>
-    /// Handles receiving and rendering video stream
-    /// </summary>
-    public class VideoStreamHandler
+    public class VideoStreamHandler : IVideoStreamHandler
     {
-        private RTCClient rtcClient;
+        private readonly IRtcClient rtcClient;
         private MediaStream receivedStream;
         private VideoStreamTrack videoTrack;
 
-        // Events for video updates
         public event Action<Texture> OnVideoFrameReceived;
         public event Action OnVideoTrackAdded;
         public event Action OnVideoTrackRemoved;
 
         private Texture videoTexture;
+        private Texture lastTexture;
+        
         public Texture VideoTexture => videoTexture;
 
-        public VideoStreamHandler(RTCClient client)
+        public VideoStreamHandler(IRtcClient client)
         {
             rtcClient = client;
             rtcClient.OnTrack += HandleTrackReceived;
         }
 
-        // Handle incoming tracks from peer connection
         private void HandleTrackReceived(RTCTrackEvent e)
         {
             if (e.Track is VideoStreamTrack videoStreamTrack)
@@ -39,20 +36,50 @@ namespace Network.WebRTC.Handlers
                 videoTrack = videoStreamTrack;
                 receivedStream = e.Streams.FirstOrDefault();
 
-                videoTrack.OnVideoReceived += HandleVideoFrameReceived;
+                Debug.Log($"[VIDEO STREAM] Track enabled: {videoTrack.Enabled}");
+                Debug.Log($"[VIDEO STREAM] Track readyState: {videoTrack.ReadyState}");
                 
                 OnVideoTrackAdded?.Invoke();
             }
         }
 
-        // Handle individual video frames
-        private void HandleVideoFrameReceived(Texture texture)
+        public void Update()
         {
-            videoTexture = texture;
-            OnVideoFrameReceived?.Invoke(texture);
+            if (videoTrack != null)
+            {
+                Texture currentTexture = videoTrack.Texture;
+                
+                if (Time.frameCount % 60 == 0)
+                {
+                    Debug.Log($"[VIDEO STREAM] videoTrack.Texture: {(currentTexture != null ? $"{currentTexture.width}x{currentTexture.height}" : "NULL")}");
+                }
+                
+                if (currentTexture != null)
+                {
+                    videoTexture = currentTexture;
+                    
+                    if (Time.frameCount % 60 == 0)
+                    {
+                        Debug.Log($"[VIDEO STREAM] Current texture format: {currentTexture.GetType().Name}, Dimensions: {currentTexture.width}x{currentTexture.height}");
+                    }
+                    
+                    if (currentTexture != lastTexture)
+                    {
+                        lastTexture = currentTexture;
+                        OnVideoFrameReceived?.Invoke(currentTexture);
+                        Debug.Log($"[VIDEO STREAM] New frame received: {currentTexture.width}x{currentTexture.height}");
+                    }
+                }
+                else
+                {
+                    if (Time.frameCount % 120 == 0)
+                    {
+                        Debug.LogWarning($"[VIDEO STREAM] videoTrack.Texture is NULL!");
+                    }
+                }
+            }
         }
 
-        // Apply video texture to a material
         public void ApplyToMaterial(Material material)
         {
             if (videoTexture != null && material != null)
@@ -61,7 +88,6 @@ namespace Network.WebRTC.Handlers
             }
         }
 
-        // Apply video texture to a UI RawImage
         public void ApplyToRawImage(UnityEngine.UI.RawImage rawImage)
         {
             if (videoTexture != null && rawImage != null)
@@ -70,19 +96,16 @@ namespace Network.WebRTC.Handlers
             }
         }
 
-        // Clean up resources
         public void Dispose()
         {
-            if (videoTrack != null)
-            {
-                videoTrack.OnVideoReceived -= HandleVideoFrameReceived;
-                videoTrack = null;
-            }
-
+            videoTrack = null;
             rtcClient.OnTrack -= HandleTrackReceived;
             
             videoTexture = null;
+            lastTexture = null;
             receivedStream = null;
+            
+            Debug.Log("[VIDEO STREAM] Disposed");
         }
     }
 }

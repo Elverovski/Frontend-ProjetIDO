@@ -1,21 +1,24 @@
 using System;
 using UnityEngine;
+using Network.WebSocket.Interfaces;
 using Network.WebSocket.Core;
 using Network.WebSocket.Models;
 
 namespace Network.WebSocket.Handlers
 {
-    public class AuthHandler
+    /// <summary>
+    /// Handles user authentication via WebSocket.
+    /// Manages login, logout, session tokens, and authentication state.
+    /// </summary>
+    public class AuthHandler : IAuthHandler
     {
-        private SocketClient socketClient;
+        private readonly ISocketClient socketClient;
         
-        // Events for login/logout
         public event Action<LoginResponse> OnLoginSuccess;
         public event Action<string> OnLoginError;
         public event Action OnLogout;
 
-        // Authentication state
-        private bool isAuthenticated = false;
+        private bool isAuthenticated;
         private string currentToken;
         private string currentUsername;
 
@@ -23,25 +26,28 @@ namespace Network.WebSocket.Handlers
         public string Token => currentToken;
         public string Username => currentUsername;
 
-        // Constructor
-        public AuthHandler(SocketClient client)
+        public AuthHandler(ISocketClient client)
         {
             socketClient = client;
             RegisterEvents();
         }
 
-        // Register WebSocket events
+        /// <summary>
+        /// Subscribes to socket events for authentication messages.
+        /// </summary>
         private void RegisterEvents()
         {
             socketClient.OnMessage += HandleMessage;
             socketClient.OnDisconnected += HandleDisconnect;
         }
 
-        // Send login request
+        /// <summary>
+        /// Sends login credentials to the server.
+        /// Uses device ID for session tracking.
+        /// </summary>
         public void Login(string username, string password, string deviceId = null)
         {
-            if (string.IsNullOrEmpty(deviceId))
-                deviceId = SystemInfo.deviceUniqueIdentifier;
+            deviceId ??= SystemInfo.deviceUniqueIdentifier;
 
             var loginRequest = new LoginRequest
             {
@@ -56,7 +62,9 @@ namespace Network.WebSocket.Handlers
             Debug.Log($"[AUTH] Login attempt: {username}");
         }
 
-        // Send logout request
+        /// <summary>
+        /// Logs out and clears authentication state.
+        /// </summary>
         public void Logout()
         {
             socketClient.SendMessage(SocketEvents.DISCONNECT, "{}");
@@ -64,7 +72,9 @@ namespace Network.WebSocket.Handlers
             Debug.Log("[AUTH] Logout");
         }
 
-        // Handle incoming messages
+        /// <summary>
+        /// Routes incoming messages to appropriate handlers.
+        /// </summary>
         private void HandleMessage(string eventName, string jsonData)
         {
             switch (eventName)
@@ -79,22 +89,29 @@ namespace Network.WebSocket.Handlers
             }
         }
 
-        // Process successful authentication
+        /// <summary>
+        /// Processes successful authentication response.
+        /// Stores token and user data.
+        /// </summary>
         private void HandleAuthSuccess(string jsonData)
         {
+            Debug.Log($"[AUTH] Raw JSON received: {jsonData}");
+    
             try
             {
                 var response = JsonUtility.FromJson<LoginResponse>(jsonData);
-                
-                if (response.success)
+        
+                Debug.Log($"[AUTH] Parsed - status: {response.status}, token: {response.token != null}, userData: {response.userData != null}");
+        
+                if (response.status)  
                 {
                     isAuthenticated = true;
                     currentToken = response.token;
                     currentUsername = response.userData?.username;
-                    
+            
                     Debug.Log($"[AUTH] Authenticated: {currentUsername}");
-                    Debug.Log($"[AUTH] Token: {currentToken?.Substring(0, 10)}...");
-                    
+                    Debug.Log($"[AUTH] Token: {currentToken?.Substring(0, Math.Min(10, currentToken?.Length ?? 0))}...");
+            
                     OnLoginSuccess?.Invoke(response);
                 }
                 else
@@ -106,11 +123,14 @@ namespace Network.WebSocket.Handlers
             catch (Exception ex)
             {
                 Debug.LogError($"[AUTH] Parse error: {ex.Message}");
+                Debug.LogError($"[AUTH] Stack trace: {ex.StackTrace}");
                 OnLoginError?.Invoke("Parse error");
             }
         }
 
-        // Process authentication errors
+        /// <summary>
+        /// Processes authentication error response.
+        /// </summary>
         private void HandleAuthError(string jsonData)
         {
             try
@@ -125,14 +145,19 @@ namespace Network.WebSocket.Handlers
             }
         }
 
-        // Handle disconnect event
+        /// <summary>
+        /// Handles disconnection event.
+        /// Clears authentication if user was logged in.
+        /// </summary>
         private void HandleDisconnect()
         {
             if (isAuthenticated)
                 ClearAuth();
         }
 
-        // Clear authentication state
+        /// <summary>
+        /// Resets authentication state and credentials.
+        /// </summary>
         private void ClearAuth()
         {
             isAuthenticated = false;
@@ -142,7 +167,9 @@ namespace Network.WebSocket.Handlers
             Debug.Log("[AUTH] Session ended");
         }
 
-        // Unregister events
+        /// <summary>
+        /// Unsubscribes from events.
+        /// </summary>
         public void Dispose()
         {
             socketClient.OnMessage -= HandleMessage;

@@ -1,37 +1,44 @@
 using System;
 using UnityEngine;
+using Network.WebSocket.Interfaces;
 using Network.WebSocket.Core;
 using Network.WebSocket.Models;
 
 namespace Network.WebSocket.Handlers
 {
-    public class SignalingHandler
+    /// <summary>
+    /// Handles WebRTC signaling over WebSocket.
+    /// Exchanges SDP offers/answers and ICE candidates between peers.
+    /// Used to establish WebRTC peer-to-peer connections.
+    /// </summary>
+    public class SignalingHandler : ISignalingHandler
     {
-        private SocketClient socketClient;
+        private readonly ISocketClient socketClient;
 
-        // Events for WebRTC signaling and peer connection
         public event Action<WebRTCOffer> OnOfferReceived;
         public event Action<WebRTCAnswer> OnAnswerReceived;
         public event Action<ICECandidate> OnICECandidateReceived;
         public event Action<string> OnRobotConnected;
         public event Action<string> OnFrontendConnected;
 
-        // Constructor
-        public SignalingHandler(SocketClient client)
+        public SignalingHandler(ISocketClient client)
         {
             socketClient = client;
             RegisterEvents();
         }
 
-        // Register WebSocket events
+        /// <summary>
+        /// Subscribes to socket messages for WebRTC signaling.
+        /// </summary>
         private void RegisterEvents()
         {
             socketClient.OnMessage += HandleMessage;
         }
 
-        /* ===================== SEND ===================== */
-
-        // Send WebRTC offer
+        /// <summary>
+        /// Sends WebRTC offer to a peer.
+        /// Offer contains SDP describing our media capabilities.
+        /// </summary>
         public void SendOffer(string sdp, string target = null)
         {
             var offer = new WebRTCOffer { sdp = sdp, target = target };
@@ -39,7 +46,10 @@ namespace Network.WebSocket.Handlers
             Debug.Log($"[SIGNALING] Offer sent to {target ?? "broadcast"}");
         }
 
-        // Send WebRTC answer
+        /// <summary>
+        /// Sends WebRTC answer to a peer.
+        /// Answer responds to received offer with our SDP.
+        /// </summary>
         public void SendAnswer(string sdp, string target = null)
         {
             var answer = new WebRTCAnswer { sdp = sdp, target = target };
@@ -47,7 +57,10 @@ namespace Network.WebSocket.Handlers
             Debug.Log($"[SIGNALING] Answer sent to {target ?? "broadcast"}");
         }
 
-        // Send ICE candidate
+        /// <summary>
+        /// Sends ICE candidate to a peer.
+        /// ICE candidates help establish connection through NAT/firewalls.
+        /// </summary>
         public void SendICECandidate(string candidate, string sdpMid, int sdpMLineIndex, string target = null)
         {
             var ice = new ICECandidate
@@ -62,9 +75,9 @@ namespace Network.WebSocket.Handlers
             Debug.Log($"[SIGNALING] ICE candidate sent to {target ?? "broadcast"}");
         }
 
-        /* ===================== RECEIVE ===================== */
-
-        // Handle incoming messages
+        /// <summary>
+        /// Routes incoming signaling messages to appropriate handlers.
+        /// </summary>
         private void HandleMessage(string eventName, string jsonData)
         {
             if (string.IsNullOrEmpty(jsonData))
@@ -94,16 +107,13 @@ namespace Network.WebSocket.Handlers
                 case SocketEvents.FRONTEND_CONNECTED:
                     HandleFrontendConnected(jsonData);
                     break;
-
-                default:
-                    Debug.LogWarning($"[SIGNALING] Unknown event: {eventName}");
-                    break;
             }
         }
 
-        /* ===================== HANDLERS ===================== */
-
-        // Process received offer
+        /// <summary>
+        /// Processes received WebRTC offer from peer.
+        /// Validates SDP and fires event for WebRTC handler.
+        /// </summary>
         private void HandleOfferReceived(string jsonData)
         {
             try
@@ -113,23 +123,22 @@ namespace Network.WebSocket.Handlers
                 if (offer == null || string.IsNullOrEmpty(offer.sdp))
                 {
                     Debug.LogError("[SIGNALING] Invalid offer payload");
-                    Debug.LogError($"[SIGNALING] Raw data: {jsonData}");
                     return;
                 }
 
                 Debug.Log($"[SIGNALING] Offer received from {offer.from}");
-                Debug.Log($"[SIGNALING] Offer SDP length: {offer.sdp.Length}");
-
                 OnOfferReceived?.Invoke(offer);
             }
             catch (Exception ex)
             {
                 Debug.LogError($"[SIGNALING] Offer parse error: {ex.Message}");
-                Debug.LogError($"[SIGNALING] Raw data: {jsonData}");
             }
         }
 
-        // Process received answer
+        /// <summary>
+        /// Processes received WebRTC answer from peer.
+        /// Validates SDP and fires event for WebRTC handler.
+        /// </summary>
         private void HandleAnswerReceived(string jsonData)
         {
             try
@@ -138,24 +147,23 @@ namespace Network.WebSocket.Handlers
 
                 if (answer == null || string.IsNullOrEmpty(answer.sdp))
                 {
-                    Debug.LogError("[SIGNALING] Answer received but SDP is empty");
-                    Debug.LogError($"[SIGNALING] Raw data: {jsonData}");
+                    Debug.LogError("[SIGNALING] Invalid answer payload");
                     return;
                 }
 
                 Debug.Log($"[SIGNALING] Answer received from {answer.from}");
-                Debug.Log($"[SIGNALING] Answer SDP length: {answer.sdp.Length}");
-
                 OnAnswerReceived?.Invoke(answer);
             }
             catch (Exception ex)
             {
                 Debug.LogError($"[SIGNALING] Answer parse error: {ex.Message}");
-                Debug.LogError($"[SIGNALING] Raw data: {jsonData}");
             }
         }
 
-        // Process received ICE candidate
+        /// <summary>
+        /// Processes received ICE candidate from peer.
+        /// Validates candidate and fires event for WebRTC handler.
+        /// </summary>
         private void HandleICECandidateReceived(string jsonData)
         {
             try
@@ -174,11 +182,12 @@ namespace Network.WebSocket.Handlers
             catch (Exception ex)
             {
                 Debug.LogError($"[SIGNALING] ICE parse error: {ex.Message}");
-                Debug.LogError($"[SIGNALING] Raw data: {jsonData}");
             }
         }
 
-        // Process robot connected notification
+        /// <summary>
+        /// Handles notification that a robot has connected to the server.
+        /// </summary>
         private void HandleRobotConnected(string jsonData)
         {
             try
@@ -193,7 +202,9 @@ namespace Network.WebSocket.Handlers
             }
         }
 
-        // Process frontend connected notification
+        /// <summary>
+        /// Handles notification that a frontend has connected to the server.
+        /// </summary>
         private void HandleFrontendConnected(string jsonData)
         {
             try
@@ -208,7 +219,9 @@ namespace Network.WebSocket.Handlers
             }
         }
 
-        // Unregister events
+        /// <summary>
+        /// Unsubscribes from socket events.
+        /// </summary>
         public void Dispose()
         {
             socketClient.OnMessage -= HandleMessage;

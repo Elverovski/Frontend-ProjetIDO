@@ -15,7 +15,7 @@ namespace Network.WebSocket.Models
     [Serializable]
     public class LoginResponse
     {
-        public bool success;
+        public bool status;
         public string token;
         public string userId;
         public string message;

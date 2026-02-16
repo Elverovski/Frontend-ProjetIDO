@@ -11,7 +11,7 @@
     "com.unity.textmeshpro": "3.0.9",
     "com.unity.timeline": "1.7.7",
     "com.unity.visualscripting": "1.9.4",
-    "com.unity.webrtc": "3.0.0-pre.8",
+    "com.unity.webrtc": "https://github.com/Unity-Technologies/com.unity.webrtc.git#2.4.0-exp.11",
     "com.unity.xr.interaction.toolkit": "3.1.2",
     "com.unity.xr.management": "4.5.1",
     "com.unity.xr.openxr": "1.14.3",

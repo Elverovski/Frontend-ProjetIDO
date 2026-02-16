@@ -2,22 +2,19 @@ using UnityEngine;
 using UnityEngine.UI;
 using Network.WebRTC;
 
-/// <summary>
-/// Displays a WebRTC video stream on a RawImage
-/// </summary>
 public class VideoDisplay : MonoBehaviour
 {
     [Header("References")]
     [SerializeField] private RawImage rawImage;
 
-    [Header("Auto-connect")]
-    [SerializeField] private bool autoConnect = true;
+    [Header("Debug")]
+    [SerializeField] private bool logFrames = false;
 
     private WebRTCManager webRTCManager;
+    private bool videoApplied = false;
 
     void Start()
     {
-        // Try to find RawImage if not assigned
         if (rawImage == null)
             rawImage = GetComponent<RawImage>();
 
@@ -27,29 +24,55 @@ public class VideoDisplay : MonoBehaviour
             return;
         }
 
+        rawImage.color = Color.white;
+        rawImage.material = null;
+
         webRTCManager = WebRTCManager.Instance;
 
-        if (autoConnect)
+        Debug.Log("[VideoDisplay] Initialized - waiting for video texture");
+    }
+
+    void Update()
+    {
+        if (!videoApplied && webRTCManager?.VideoStream?.VideoTexture != null)
         {
-            webRTCManager.OnVideoReady += HandleVideoReady;
-            webRTCManager.VideoStream.OnVideoFrameReceived += HandleVideoFrame;
+            Texture videoTexture = webRTCManager.VideoStream.VideoTexture;
+            
+            rawImage.texture = videoTexture;
+            videoApplied = true;
+            
+            Debug.Log($"[VideoDisplay] ========== VIDEO APPLIED ==========");
+            Debug.Log($"[VideoDisplay]   Size: {videoTexture.width}x{videoTexture.height}");
+            Debug.Log($"[VideoDisplay]   Type: {videoTexture.GetType().Name}");
+            Debug.Log($"[VideoDisplay]   Graphics Format: {videoTexture.graphicsFormat}");
+            Debug.Log($"[VideoDisplay]   Dimension: {videoTexture.dimension}");
+            
+            if (videoTexture is Texture2D tex2D)
+            {
+                Debug.Log($"[VideoDisplay]   Texture2D Format: {tex2D.format}");
+                Debug.Log($"[VideoDisplay]   isReadable: {tex2D.isReadable}");
+            }
+            else if (videoTexture is RenderTexture rt)
+            {
+                Debug.Log($"[VideoDisplay]   RenderTexture Format: {rt.format}");
+            }
+            
+            Debug.Log($"[VideoDisplay] ==========================================");
         }
 
-        Debug.Log("[VideoDisplay] Initialized");
-    }
-
-    // Called when the video track is ready
-    private void HandleVideoReady()
-    {
-        Debug.Log("[VideoDisplay] Video track ready");
-    }
-
-    // Update the RawImage texture with the latest video frame
-    private void HandleVideoFrame(Texture texture)
-    {
-        if (rawImage != null)
+        if (videoApplied && webRTCManager?.VideoStream?.VideoTexture != null)
         {
-            rawImage.texture = texture;
+            Texture currentTexture = webRTCManager.VideoStream.VideoTexture;
+            
+            if (rawImage.texture != currentTexture)
+            {
+                rawImage.texture = currentTexture;
+                
+                if (logFrames)
+                {
+                    Debug.Log($"[VideoDisplay] Texture updated: {currentTexture.width}x{currentTexture.height}");
+                }
+            }
         }
     }
 
@@ -57,12 +80,7 @@ public class VideoDisplay : MonoBehaviour
     {
         if (webRTCManager != null)
         {
-            webRTCManager.OnVideoReady -= HandleVideoReady;
-
-            if (webRTCManager.VideoStream != null)
-            {
-                webRTCManager.VideoStream.OnVideoFrameReceived -= HandleVideoFrame;
-            }
+            webRTCManager.OnVideoReady -= null;
         }
     }
-}
+} 

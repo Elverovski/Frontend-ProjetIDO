@@ -2,10 +2,11 @@ using System;
 using System.Collections;
 using UnityEngine;
 using Unity.WebRTC;
+using Network.WebRTC.Interfaces;
 
 namespace Network.WebRTC.Core
 {
-    public class RTCClient : MonoBehaviour
+    public class RTCClient : MonoBehaviour, IRtcClient
     {
         private static RTCClient _instance;
         public static RTCClient Instance
@@ -14,7 +15,7 @@ namespace Network.WebRTC.Core
             {
                 if (_instance == null)
                 {
-                    GameObject go = new GameObject("RTCClient");
+                    var go = new GameObject("RTCClient");
                     _instance = go.AddComponent<RTCClient>();
                     DontDestroyOnLoad(go);
                 }
@@ -23,12 +24,10 @@ namespace Network.WebRTC.Core
         }
 
         private RTCPeerConnection peerConnection;
-        private RTCConfig rtcConfig;
+        private RTCConfiguration rtcConfiguration;
 
-        // Connection state
         public bool IsConnected { get; private set; }
 
-        // Events
         public event Action OnConnected;
         public event Action OnDisconnected;
         public event Action<RTCIceCandidate> OnIceCandidate;
@@ -45,17 +44,42 @@ namespace Network.WebRTC.Core
             _instance = this;
             DontDestroyOnLoad(gameObject);
 
+            rtcConfiguration = GetDefaultConfiguration();
+
             Debug.Log("[RTC CLIENT] Initialized");
         }
 
-        // Set RTC configuration
+        private void Start()
+        {
+            StartCoroutine(Unity.WebRTC.WebRTC.Update());
+            Debug.Log("[RTC CLIENT] Ready");
+        }
+
         public void Initialize(RTCConfig config)
         {
-            rtcConfig = config;
+            if (config == null)
+            {
+                Debug.LogWarning("[RTC CLIENT] Config is null, using default");
+                rtcConfiguration = GetDefaultConfiguration();
+            }
+            else
+            {
+                rtcConfiguration = config.GetConfiguration();
+            }
             Debug.Log("[RTC CLIENT] Configuration set");
         }
 
-        // Create a new peer connection
+        private RTCConfiguration GetDefaultConfiguration()
+        {
+            return new RTCConfiguration
+            {
+                iceServers = new RTCIceServer[]
+                {
+                    new RTCIceServer { urls = new string[] { "stun:stun.l.google.com:19302" } }
+                }
+            };
+        }
+
         public void CreatePeerConnection()
         {
             if (peerConnection != null)
@@ -64,53 +88,69 @@ namespace Network.WebRTC.Core
                 return;
             }
 
-            var configuration = rtcConfig.GetConfiguration();
+            if (rtcConfiguration.iceServers == null || rtcConfiguration.iceServers.Length == 0)
+            {
+                Debug.LogWarning("[RTC CLIENT] rtcConfiguration was invalid, creating default");
+                rtcConfiguration = GetDefaultConfiguration();
+            }
+
+            var configuration = rtcConfiguration;
             peerConnection = new RTCPeerConnection(ref configuration);
 
-            // ICE candidate event
-            peerConnection.OnIceCandidate = candidate => 
+            var transceiverInit = new RTCRtpTransceiverInit
+            {
+                direction = RTCRtpTransceiverDirection.RecvOnly
+            };
+
+            peerConnection.AddTransceiver(TrackKind.Video, transceiverInit);
+            Debug.Log("[RTC CLIENT] Video transceiver added (RecvOnly)");
+
+            RegisterPeerConnectionCallbacks();
+
+            Debug.Log("[RTC CLIENT] Peer connection created");
+        }
+
+        private void RegisterPeerConnectionCallbacks()
+        {
+            peerConnection.OnIceCandidate = candidate =>
             {
                 Debug.Log("[RTC CLIENT] ICE candidate generated");
                 OnIceCandidate?.Invoke(candidate);
             };
 
-            // Track received event
-            peerConnection.OnTrack = e => 
+            peerConnection.OnTrack = e =>
             {
                 Debug.Log($"[RTC CLIENT] Track received: {e.Track.Kind}");
                 OnTrack?.Invoke(e);
             };
 
-            // Data channel received event
-            peerConnection.OnDataChannel = channel => 
+            peerConnection.OnDataChannel = channel =>
             {
                 Debug.Log($"[RTC CLIENT] Data channel received: {channel.Label}");
                 OnDataChannel?.Invoke(channel);
             };
 
-            // Connection state changes
-            peerConnection.OnConnectionStateChange = state =>
-            {
-                Debug.Log($"[RTC CLIENT] Connection state: {state}");
-                
-                if (state == RTCPeerConnectionState.Connected)
-                {
-                    IsConnected = true;
-                    OnConnected?.Invoke();
-                }
-                else if (state == RTCPeerConnectionState.Disconnected || 
-                         state == RTCPeerConnectionState.Failed || 
-                         state == RTCPeerConnectionState.Closed)
-                {
-                    IsConnected = false;
-                    OnDisconnected?.Invoke();
-                }
-            };
-
-            Debug.Log("[RTC CLIENT] Peer connection created");
+            peerConnection.OnConnectionStateChange = HandleConnectionStateChange;
         }
 
-        // Close and dispose peer connection
+        private void HandleConnectionStateChange(RTCPeerConnectionState state)
+        {
+            Debug.Log($"[RTC CLIENT] Connection state: {state}");
+
+            if (state == RTCPeerConnectionState.Connected)
+            {
+                IsConnected = true;
+                OnConnected?.Invoke();
+            }
+            else if (state == RTCPeerConnectionState.Disconnected ||
+                     state == RTCPeerConnectionState.Failed ||
+                     state == RTCPeerConnectionState.Closed)
+            {
+                IsConnected = false;
+                OnDisconnected?.Invoke();
+            }
+        }
+
         public void ClosePeerConnection()
         {
             if (peerConnection == null) return;
@@ -123,7 +163,6 @@ namespace Network.WebRTC.Core
             Debug.Log("[RTC CLIENT] Peer connection closed");
         }
 
-        // Create WebRTC offer
         public void CreateOffer(Action<RTCSessionDescription> onSuccess, Action<string> onError)
         {
             StartCoroutine(CreateOfferCoroutine(onSuccess, onError));
@@ -162,7 +201,6 @@ namespace Network.WebRTC.Core
             onSuccess?.Invoke(desc);
         }
 
-        // Create WebRTC answer
         public void CreateAnswer(Action<RTCSessionDescription> onSuccess, Action<string> onError)
         {
             StartCoroutine(CreateAnswerCoroutine(onSuccess, onError));
@@ -201,7 +239,6 @@ namespace Network.WebRTC.Core
             onSuccess?.Invoke(desc);
         }
 
-        // Set remote description
         public void SetRemoteDescription(RTCSessionDescription desc, Action onSuccess, Action<string> onError)
         {
             StartCoroutine(SetRemoteDescriptionCoroutine(desc, onSuccess, onError));
@@ -229,7 +266,6 @@ namespace Network.WebRTC.Core
             onSuccess?.Invoke();
         }
 
-        // Add ICE candidate
         public void AddIceCandidate(RTCIceCandidate candidate)
         {
             if (peerConnection == null)
@@ -242,7 +278,6 @@ namespace Network.WebRTC.Core
             Debug.Log("[RTC CLIENT] ICE candidate added");
         }
 
-        // Create data channel
         public RTCDataChannel CreateDataChannel(string label)
         {
             if (peerConnection == null)
@@ -256,13 +291,11 @@ namespace Network.WebRTC.Core
             return dataChannel;
         }
 
-        // Get peer connection instance
         public RTCPeerConnection GetPeerConnection()
         {
             return peerConnection;
         }
 
-        // Cleanup on destroy
         private void OnDestroy()
         {
             ClosePeerConnection();

@@ -1,4 +1,3 @@
-
 namespace Core
 {
     public enum ConnectionState
@@ -9,13 +8,6 @@ namespace Core
         Authenticating,
         Authenticated,
         Error
-    }
-    
-    public enum VehicleMode
-    {
-        Stopped,
-        Manual,
-        Emergency
     }
     
     public enum LogLevel

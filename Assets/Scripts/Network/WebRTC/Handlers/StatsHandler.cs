@@ -2,35 +2,29 @@ using System;
 using System.Collections;
 using UnityEngine;
 using Unity.WebRTC;
-using Network.WebRTC.Core;
+using Network.WebRTC.Interfaces;
 
 namespace Network.WebRTC.Handlers
 {
-    /// <summary>
-    /// Handles WebRTC statistics monitoring
-    /// </summary>
-    public class StatsHandler
+    public class StatsHandler : IStatsHandler
     {
-        private RTCClient rtcClient;
-        private MonoBehaviour coroutineRunner;
+        private readonly IRtcClient rtcClient;
+        private readonly MonoBehaviour coroutineRunner;
         private Coroutine statsCoroutine;
 
-        // Event for updated stats
         public event Action<RTCStatsReport> OnStatsUpdated;
 
-        // Latest stats
         public RTCStatsReport LatestStats { get; private set; }
 
-        private bool isMonitoring = false;
+        private bool isMonitoring;
         private float updateInterval = 1f;
 
-        public StatsHandler(RTCClient client, MonoBehaviour runner)
+        public StatsHandler(IRtcClient client, MonoBehaviour runner)
         {
             rtcClient = client;
             coroutineRunner = runner;
         }
 
-        // Start monitoring stats
         public void StartMonitoring(float interval = 1f)
         {
             if (isMonitoring)
@@ -46,7 +40,6 @@ namespace Network.WebRTC.Handlers
             Debug.Log("[STATS] Started monitoring");
         }
 
-        // Stop monitoring stats
         public void StopMonitoring()
         {
             if (!isMonitoring) return;
@@ -62,7 +55,6 @@ namespace Network.WebRTC.Handlers
             Debug.Log("[STATS] Stopped monitoring");
         }
 
-        // Coroutine to periodically fetch stats
         private IEnumerator MonitorStatsRoutine()
         {
             while (isMonitoring)
@@ -78,7 +70,6 @@ namespace Network.WebRTC.Handlers
                     {
                         LatestStats = statsOp.Value;
                         OnStatsUpdated?.Invoke(LatestStats);
-                        // Debug.Log($"[STATS] Updated: {LatestStats.Stats.Count} stats");
                     }
                 }
 
@@ -86,7 +77,6 @@ namespace Network.WebRTC.Handlers
             }
         }
 
-        // Get a specific stat by type
         public RTCStats GetStatByType(RTCStatsType type)
         {
             if (LatestStats == null) return null;
@@ -102,19 +92,16 @@ namespace Network.WebRTC.Handlers
             return null;
         }
 
-        // Get video bitrate 
         public double GetVideoBitrate()
         {
             var inboundRtp = GetStatByType(RTCStatsType.InboundRtp);
             if (inboundRtp != null && inboundRtp.Dict.ContainsKey("bytesReceived"))
             {
-                // TODO: implement bitrate calculation
                 return 0;
             }
             return 0;
         }
 
-        // Stop monitoring and cleanup
         public void Dispose()
         {
             StopMonitoring();
